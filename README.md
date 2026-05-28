@@ -1,5 +1,7 @@
 # TeleDoc Enterprise AWS Infrastructure
 
+![TeleDoc AWS Architecture](Deployment%20Screenshots/TeleDoc_AWS_Architecture.gif)
+
 This repository contains the complete, production-ready DevOps and Infrastructure-as-Code (IaC) setup for the **TeleDoc Platform**, a massive B2B telehealth and e-commerce marketplace.
 
 **IMPORTANT NOTICE FOR REVIEWERS:** This repository is specifically designed to showcase the Cloud Infrastructure, CI/CD pipelines, and DevOps architecture. The actual proprietary application source code (Laravel Backend / React Frontend) is kept private and is not included here.
