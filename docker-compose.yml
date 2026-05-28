@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: teledoc-backend
+    ports:
+      - "8080:80"
+    volumes:
+      - ./backend:/var/www/html
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - APP_URL=http://localhost:8080
+      - DB_CONNECTION=mysql
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_DATABASE=${DB_DATABASE:-u561414534_teledoc}
+      - DB_USERNAME=${DB_USERNAME:-u561414534_teledoc}
+      - DB_PASSWORD=${DB_PASSWORD:-secret}
+    depends_on:
+      - db
+    networks:
+      - teledoc-network
+
+  frontend:
+    build:
+      context: .
+    container_name: teledoc-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules # Prevent local node_modules from overriding container's
+    environment:
+      - CHOKIDAR_USEPOLLING=true # Useful for hot-reloading in Docker
+      - WDS_SOCKET_PORT=0
+      - REACT_APP_BASE_URL=http://localhost:8080/api
+    depends_on:
+      - backend
+    networks:
+      - teledoc-network
+
+  db:
+    image: mysql:8.0
+    container_name: teledoc-db
+    restart: always
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-u561414534_teledoc}
+      MYSQL_USER: ${DB_USERNAME:-u561414534_teledoc}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+    ports:
+      - "3306:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+    networks:
+      - teledoc-network
+
+volumes:
+  dbdata:
+
+
+networks:
+  teledoc-network:
+    driver: bridge

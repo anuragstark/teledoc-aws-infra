@@ -1,0 +1,63 @@
+# ============================================
+# TeleDoc — Prometheus Configuration
+# ============================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+  external_labels:
+    project: 'teledoc'
+    environment: 'production'
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          instance: 'monitor-server'
+
+  # Node Exporter — App EC2 host metrics via AWS Service Discovery
+  - job_name: 'node-exporter'
+    ec2_sd_configs:
+      - region: ap-south-1
+        port: 9100
+        filters:
+          - name: tag:Role
+            values: [application]
+    relabel_configs:
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: private_ip
+
+  # cAdvisor — Docker container metrics via AWS Service Discovery
+  - job_name: 'cadvisor'
+    ec2_sd_configs:
+      - region: ap-south-1
+        port: 8080
+        filters:
+          - name: tag:Role
+            values: [application]
+    relabel_configs:
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: private_ip
+
+  # Blackbox Exporter — Website availability
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://ALB_DNS_NAME
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

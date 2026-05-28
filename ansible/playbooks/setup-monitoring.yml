@@ -1,0 +1,12 @@
+# ============================================
+# TeleDoc — Setup Monitoring Server Playbook
+# ============================================
+# Run: ansible-playbook playbooks/setup-monitoring.yml
+# ============================================
+---
+- name: Setup TeleDoc Monitoring Server
+  hosts: monitoring
+  become: yes
+
+  roles:
+    - role: monitoring

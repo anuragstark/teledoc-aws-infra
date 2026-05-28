@@ -1,0 +1,24 @@
+# ============================================
+# TeleDoc — Example Terraform Variables
+# ============================================
+# Copy this file to terraform.tfvars and fill in your values:
+#   cp terraform.tfvars.example terraform.tfvars
+# ============================================
+
+aws_region     = "ap-south-1"
+project_name   = "teledoc"
+key_name       = "teledoc"
+
+# Your public IP (find it: curl ifconfig.me)
+# Add /32 for single IP CIDR
+my_ip = "YOUR_PUBLIC_IP/32"
+
+# RDS MySQL credentials
+db_name     = "teledoc"
+db_username = "teledoc_admin"
+db_password = "CHANGE_ME_TO_A_STRONG_PASSWORD"
+
+# Instance types
+app_instance_type     = "t2.medium"
+monitor_instance_type = "t2.micro"
+db_instance_class     = "db.t3.micro"

@@ -1,0 +1,216 @@
+# ============================================
+# TeleDoc - CI/CD Pipeline
+# ============================================
+# Stages: Build -> Scan (Trivy) -> Push ECR -> Deploy to EC2
+# Triggers: Push to main, Manual dispatch
+# Everything runs on GitHub Actions - nothing on local machine
+# ============================================
+
+name:  CI/CD Deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - 'devops/**'
+      - 'terraform/**'
+      - 'ansible/**'
+      - 'monitoring/**'
+      - '*.md'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_FRONTEND_REPO: teledoc-frontend
+  ECR_BACKEND_REPO: teledoc-backend
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ============================================
+  # Stage 1: BUILD Docker Images
+  # ============================================
+  build:
+    name:  Build
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: meta
+        run: |
+          IMAGE_TAG="${GITHUB_SHA::8}"
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo " Image tag: $IMAGE_TAG"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.ECR_FRONTEND_REPO }}:${{ steps.meta.outputs.image_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.ECR_BACKEND_REPO }}:${{ steps.meta.outputs.image_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Save images as artifacts
+        run: |
+          docker save ${{ env.ECR_FRONTEND_REPO }}:${{ steps.meta.outputs.image_tag }} | gzip > frontend-image.tar.gz
+          docker save ${{ env.ECR_BACKEND_REPO }}:${{ steps.meta.outputs.image_tag }} | gzip > backend-image.tar.gz
+
+      - name: Upload image artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: |
+            frontend-image.tar.gz
+            backend-image.tar.gz
+          retention-days: 1
+
+  # ============================================
+  # Stage 2: SECURITY SCAN (Trivy)
+  # ============================================
+  scan:
+    name:  Trivy Scan
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download images
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+
+      - name: Load images
+        run: |
+          docker load < frontend-image.tar.gz
+          docker load < backend-image.tar.gz
+
+      - name: Scan Frontend
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ECR_FRONTEND_REPO }}:${{ needs.build.outputs.image_tag }}'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Scan Backend
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ECR_BACKEND_REPO }}:${{ needs.build.outputs.image_tag }}'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+  # ============================================
+  # Stage 3: PUSH to ECR
+  # ============================================
+  push:
+    name:  Push ECR
+    runs-on: ubuntu-latest
+    needs: [build, scan]
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Download images
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+
+      - name: Load images
+        run: |
+          docker load < frontend-image.tar.gz
+          docker load < backend-image.tar.gz
+
+      - name: Tag and push to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+        run: |
+          # Frontend
+          docker tag $ECR_FRONTEND_REPO:$IMAGE_TAG $ECR_REGISTRY/$ECR_FRONTEND_REPO:$IMAGE_TAG
+          docker tag $ECR_FRONTEND_REPO:$IMAGE_TAG $ECR_REGISTRY/$ECR_FRONTEND_REPO:latest
+          docker push $ECR_REGISTRY/$ECR_FRONTEND_REPO:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_FRONTEND_REPO:latest
+
+          # Backend
+          docker tag $ECR_BACKEND_REPO:$IMAGE_TAG $ECR_REGISTRY/$ECR_BACKEND_REPO:$IMAGE_TAG
+          docker tag $ECR_BACKEND_REPO:$IMAGE_TAG $ECR_REGISTRY/$ECR_BACKEND_REPO:latest
+          docker push $ECR_REGISTRY/$ECR_BACKEND_REPO:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_BACKEND_REPO:latest
+
+          echo " Pushed: $ECR_REGISTRY/$ECR_FRONTEND_REPO:$IMAGE_TAG"
+          echo " Pushed: $ECR_REGISTRY/$ECR_BACKEND_REPO:$IMAGE_TAG"
+
+  # ============================================
+  # Stage 4: DEPLOY via Auto Scaling Group
+  # ============================================
+  deploy:
+    name:  Deploy via ASG
+    runs-on: ubuntu-latest
+    needs: [build, push]
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update SSM Parameter (IMAGE_TAG)
+        run: |
+          echo "Updating /teledoc/prod/image_tag to ${{ needs.build.outputs.image_tag }}"
+          aws ssm put-parameter \
+            --name "/teledoc/prod/image_tag" \
+            --value "${{ needs.build.outputs.image_tag }}" \
+            --type "String" \
+            --overwrite
+
+      - name: Trigger ASG Instance Refresh
+        run: |
+          echo "Triggering Auto Scaling Group Instance Refresh..."
+          aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name teledoc-app-asg \
+            --preferences '{"MinHealthyPercentage": 50}'
+          
+          echo "============================================"
+          echo " Instance refresh triggered!"
+          echo " AWS will gracefully boot a new EC2 instance,"
+          echo " attach it to the Load Balancer, and then"
+          echo " terminate the old instance. Zero downtime!"
+          echo "============================================"

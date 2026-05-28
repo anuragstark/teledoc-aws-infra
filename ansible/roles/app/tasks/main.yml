@@ -1,0 +1,76 @@
+# ============================================
+# TeleDoc — App Deployment Role (Tasks)
+# ============================================
+# Deploys TeleDoc app containers on App EC2
+# Pulls images from ECR, runs docker-compose
+# ============================================
+---
+- name: Create app directory
+  file:
+    path: /home/ec2-user/teledoc
+    state: directory
+    owner: ec2-user
+    group: ec2-user
+    mode: '0755'
+
+- name: Copy docker-compose.prod.yml
+  copy:
+    src: "{{ playbook_dir }}/../../docker-compose.prod.yml"
+    dest: /home/ec2-user/teledoc/docker-compose.yml
+    owner: ec2-user
+    group: ec2-user
+    mode: '0644'
+
+- name: Create .env file for production
+  template:
+    src: env.prod.j2
+    dest: /home/ec2-user/teledoc/.env
+    owner: ec2-user
+    group: ec2-user
+    mode: '0600'
+
+- name: Login to ECR
+  shell: |
+    aws ecr get-login-password --region {{ aws_region }} | \
+    docker login --username AWS --password-stdin {{ ecr_registry }}
+  become_user: ec2-user
+  changed_when: true
+
+- name: Pull latest images from ECR
+  shell: |
+    cd /home/ec2-user/teledoc && \
+    docker-compose pull
+  become_user: ec2-user
+  changed_when: true
+
+- name: Start application containers
+  shell: |
+    cd /home/ec2-user/teledoc && \
+    docker-compose up -d --remove-orphans
+  become_user: ec2-user
+  changed_when: true
+
+- name: Wait for backend to be healthy
+  uri:
+    url: "http://localhost:80/health"
+    status_code: 200
+  register: health_check
+  until: health_check.status == 200
+  retries: 10
+  delay: 10
+
+- name: Run Laravel migrations
+  shell: |
+    docker exec teledoc-backend php artisan migrate --force
+  become_user: ec2-user
+  changed_when: true
+
+- name: Print running containers
+  shell: docker ps --format "table {{'{{'}}.Names{{'}}'}}\t{{'{{'}}.Status{{'}}'}}\t{{'{{'}}.Ports{{'}}'}}"
+  become_user: ec2-user
+  register: containers
+  changed_when: false
+
+- name: Display running containers
+  debug:
+    msg: "{{ containers.stdout_lines }}"

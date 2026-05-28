@@ -1,0 +1,103 @@
+# ============================================
+# TeleDoc — Production Docker Compose
+# ============================================
+# Services: Frontend (NGINX) + Backend (Laravel)
+# Database: RDS MySQL (external, not in Docker)
+# Monitoring: Node Exporter + cAdvisor (scraped by Prometheus on Monitor EC2)
+# ============================================
+
+version: '3.8'
+
+services:
+  # ---- React Frontend (NGINX) ----
+  frontend:
+    image: ${ECR_REGISTRY}/teledoc-frontend:${IMAGE_TAG:-latest}
+    container_name: teledoc-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - teledoc-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ---- Laravel Backend (PHP-Apache) ----
+  backend:
+    image: ${ECR_REGISTRY}/teledoc-backend:${IMAGE_TAG:-latest}
+    container_name: teledoc-backend
+    restart: unless-stopped
+    expose:
+      - "80"
+    environment:
+      - APP_NAME=TeleDoc
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - APP_URL=${APP_URL:-http://localhost}
+      - APP_KEY=${APP_KEY}
+      - DB_CONNECTION=mysql
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=3306
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - LOG_CHANNEL=stack
+      - CACHE_DRIVER=file
+      - SESSION_DRIVER=file
+      - QUEUE_CONNECTION=sync
+    networks:
+      - teledoc-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ---- Node Exporter (Host Metrics for Prometheus) ----
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: teledoc-node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - teledoc-network
+
+  # ---- cAdvisor (Container Metrics for Prometheus) ----
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: teledoc-cadvisor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - teledoc-network
+
+networks:
+  teledoc-network:
+    driver: bridge

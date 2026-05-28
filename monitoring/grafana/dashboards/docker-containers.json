@@ -1,0 +1,82 @@
+{
+  "annotations": { "list": [] },
+  "description": "TeleDoc Docker Container Metrics via cAdvisor",
+  "editable": true,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Running Containers",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "count(container_last_seen{name=~\".+\",job=\"cadvisor\"})",
+          "legendFormat": "Containers"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": { "unit": "percent" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "id": 2,
+      "title": "Container CPU Usage",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(container_cpu_usage_seconds_total{name=~\"teledoc-.+\",job=\"cadvisor\"}[5m]) * 100",
+          "legendFormat": "{{name}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "id": 3,
+      "title": "Container Memory Usage",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "container_memory_usage_bytes{name=~\"teledoc-.+\",job=\"cadvisor\"}",
+          "legendFormat": "{{name}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": { "unit": "Bps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "id": 4,
+      "title": "Container Network RX",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(container_network_receive_bytes_total{name=~\"teledoc-.+\",job=\"cadvisor\"}[5m])",
+          "legendFormat": "{{name}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": { "unit": "Bps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "id": 5,
+      "title": "Container Network TX",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(container_network_transmit_bytes_total{name=~\"teledoc-.+\",job=\"cadvisor\"}[5m])",
+          "legendFormat": "{{name}}"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "tags": ["teledoc", "docker", "cadvisor"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "TeleDoc - Docker Containers",
+  "uid": "teledoc-containers"
+}

@@ -1,0 +1,99 @@
+# ============================================
+# TeleDoc — Monitoring Stack Role (Tasks)
+# ============================================
+# Deploys Prometheus + Grafana + Blackbox Exporter
+# on the Monitoring EC2 instance
+# ============================================
+---
+- name: Create monitoring directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: ec2-user
+    group: ec2-user
+    mode: '0755'
+  loop:
+    - /home/ec2-user/monitoring
+    - /home/ec2-user/monitoring/prometheus
+    - /home/ec2-user/monitoring/grafana
+    - /home/ec2-user/monitoring/grafana/provisioning
+    - /home/ec2-user/monitoring/grafana/provisioning/datasources
+    - /home/ec2-user/monitoring/grafana/provisioning/dashboards
+    - /home/ec2-user/monitoring/grafana/dashboards
+    - /home/ec2-user/monitoring/blackbox
+
+- name: Copy Prometheus configuration
+  copy:
+    src: "{{ playbook_dir }}/../../monitoring/prometheus/prometheus.yml"
+    dest: /home/ec2-user/monitoring/prometheus/prometheus.yml
+    owner: ec2-user
+    group: ec2-user
+    mode: '0644'
+
+- name: Copy Blackbox exporter configuration
+  copy:
+    src: "{{ playbook_dir }}/../../monitoring/prometheus/blackbox.yml"
+    dest: /home/ec2-user/monitoring/blackbox/blackbox.yml
+    owner: ec2-user
+    group: ec2-user
+    mode: '0644'
+
+- name: Copy Grafana datasource provisioning
+  copy:
+    src: "{{ playbook_dir }}/../../monitoring/grafana/provisioning/datasources/prometheus.yml"
+    dest: /home/ec2-user/monitoring/grafana/provisioning/datasources/prometheus.yml
+    owner: ec2-user
+    group: ec2-user
+    mode: '0644'
+
+- name: Copy Grafana dashboard provisioning
+  copy:
+    src: "{{ playbook_dir }}/../../monitoring/grafana/provisioning/dashboards/dashboard.yml"
+    dest: /home/ec2-user/monitoring/grafana/provisioning/dashboards/dashboard.yml
+    owner: ec2-user
+    group: ec2-user
+    mode: '0644'
+
+- name: Copy Grafana dashboards
+  copy:
+    src: "{{ item }}"
+    dest: /home/ec2-user/monitoring/grafana/dashboards/
+    owner: ec2-user
+    group: ec2-user
+    mode: '0644'
+  with_fileglob:
+    - "{{ playbook_dir }}/../../monitoring/grafana/dashboards/*.json"
+
+- name: Copy monitoring docker-compose
+  copy:
+    src: "{{ playbook_dir }}/../../monitoring/docker-compose.monitoring.yml"
+    dest: /home/ec2-user/monitoring/docker-compose.yml
+    owner: ec2-user
+    group: ec2-user
+    mode: '0644'
+
+- name: Start monitoring stack
+  shell: |
+    cd /home/ec2-user/monitoring && \
+    docker-compose up -d --remove-orphans
+  become_user: ec2-user
+  changed_when: true
+
+- name: Wait for Grafana to be healthy
+  uri:
+    url: "http://localhost:3000/api/health"
+    status_code: 200
+  register: grafana_health
+  until: grafana_health.status == 200
+  retries: 10
+  delay: 10
+
+- name: Print monitoring status
+  shell: docker ps --format "table {{'{{'}}.Names{{'}}'}}\t{{'{{'}}.Status{{'}}'}}\t{{'{{'}}.Ports{{'}}'}}"
+  become_user: ec2-user
+  register: monitor_containers
+  changed_when: false
+
+- name: Display monitoring containers
+  debug:
+    msg: "{{ monitor_containers.stdout_lines }}"
