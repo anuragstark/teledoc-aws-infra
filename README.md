@@ -2,6 +2,8 @@
 
 ![TeleDoc AWS Architecture](Deployment%20Screenshots/TeleDoc_AWS_Architecture.gif)
 
+**Live Domain:** [https://teledoc.co.in/](https://teledoc.co.in/)
+
 This repository contains the complete, production-ready DevOps and Infrastructure-as-Code (IaC) setup for the **TeleDoc Platform**, a massive B2B telehealth and e-commerce marketplace.
 
 **IMPORTANT NOTICE FOR REVIEWERS:** This repository is specifically designed to showcase the Cloud Infrastructure, CI/CD pipelines, and DevOps architecture. The actual proprietary application source code (Laravel Backend / React Frontend) is kept private and is not included here.
@@ -35,10 +37,15 @@ We implemented custom system health check APIs (e.g., `/ping` endpoints) that in
 The application layer was decoupled from the host OS using heavily optimized multi-stage Dockerfiles. Build dependencies are separated from the runtime environment (Nginx + PHP-FPM) to keep image sizes extremely small, accelerating deployment times and enhancing security.
 
 ### 4. Configuration Management & Monitoring (Ansible + Prometheus)
-We used Ansible to fully automate server bootstrapping. Ansible dynamically deploys a complete monitoring stack—Prometheus for metrics collection and Grafana for real-time visualization. This provides instant visibility into container health, API latency, and infrastructure resource utilization.
+We used Ansible to fully automate server bootstrapping. Crucially, the **Ansible inventory is dynamically generated** by GitHub Actions using real-time Terraform outputs, ensuring playbooks always target the correct ephemeral EC2 instances. 
+For observability, Prometheus uses **AWS EC2 Service Discovery (`ec2_sd_configs`)** to automatically detect and scrape metrics from new Auto Scaling instances the moment they launch. We also integrated the **Blackbox Exporter** to actively probe the Application Load Balancer via HTTP, verifying true external website availability.
 
-### 5. Continuous Deployment (GitHub Actions)
-Fully automated GitHub Action workflows fetch code, inject encrypted secrets, run tests, and seamlessly update the live environment.
+### 5. Continuous Deployment & DevSecOps (GitHub Actions)
+Fully automated workflows (`deploy.yml` and `infra.yml`) handle the entire deployment lifecycle:
+* **Docker Buildx Caching (`type=gha`)**: Reuses unmodified Docker layers to significantly accelerate computationally expensive multi-stage builds.
+* **Shift-Left Security (Trivy)**: Actively scans Docker images for `CRITICAL/HIGH` vulnerabilities, blocking insecure code before it ever reaches AWS ECR.
+* **Zero-Trust Secrets**: Passwords are never baked into image layers. They are securely injected into containers at runtime via **AWS SSM Parameter Store**.
+* **Zero-Downtime Rollouts**: The pipeline triggers an AWS Auto Scaling **Instance Refresh** to gracefully rotate instances without dropping a single user request.
 
 ---
 
